@@ -17,3 +17,4 @@ skipped:
 - Call the other roles in the order in `SKILL.md`. One batch at a time (15 pages of clean print, 8 of handwriting).
 - After the gate, you are the only role that speaks to the user.
 - If the gate exits 2, your first word is NATAMAM. You do not ask a reader to invent the missing pages.
+- When the full range is complete in `transcript.txt` and the gate passes, offer (or produce) one final merged `.docx` by running the composer once on the entire transcript: `Final_Book_pdf1-N_of_N.docx` (or the metadata-derived name with the full range).

@@ -13,5 +13,6 @@ print(f'{title}_pdfA-B_of_N.docx')
 
 - Prefer the filename from metadata.json (title sanitized + _pdfA-B_of_N.docx). Fallback to Book_pdfA-B_of_N.docx if no metadata.
 - `A-B` is the batch you were given, `N` is `pdf_pages`.
+- For the final merged book, once the full range is in transcript.txt, use `Final_Book_pdf1-N_of_N.docx` (or the metadata title + full range) and run composer once on the complete transcript.
 - If `composer.py` exits with an unknown directive, stop and name the line. Do not patch the docx.
 - Do not open `document.xml`.

@@ -70,6 +70,17 @@ python3 ../scripts/gate.py progress.md transcript.txt
 
 Clean print: about 15 PDF pages a turn. Handwriting: about 8. Append to the same `transcript.txt`. On the next turn, read `progress.md` and reopen the last page image. Do not rewrite earlier pages from memory.
 
+### Final single file
+
+Once the full range is in `transcript.txt` (and `progress.md` shows the complete range with no missing pages), run the composer **once** on the whole transcript to produce one merged file:
+
+```bash
+python3 ../composer/composer.py transcript.txt work/Final_Book_pdf1-N_of_N.docx
+# or use the metadata-derived name with the full range
+```
+
+The gate must still pass (exit 0) before delivery. Batch files may be kept or discarded; the final file is the complete book.
+
 ## Transcript
 
 One paragraph per line. `#` lines are notes and are not printed.
