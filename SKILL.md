@@ -53,7 +53,16 @@ python3 ../scripts/render_regions.py book.pdf INDEX pages
 7. After the batch, and only then, the composer runs:
 
 ```bash
-python3 ../composer/composer.py transcript.txt Book_pdfA-B_of_N.docx
+# Filename extracted from work/metadata.json title field (sanitized)
+python3 ../composer/composer.py transcript.txt "$(python3 -c "
+import json,re,os
+try:
+  m=json.load(open('metadata.json'))
+  title=re.sub(r'[^A-Za-z0-9_\-]','_',m.get('title','Book')).strip('_')
+  print(f'{title}_pdfA-B_of_N.docx')
+except:
+  print('Book_pdfA-B_of_N.docx')
+")"
 python3 ../scripts/gate.py progress.md transcript.txt
 ```
 
@@ -72,11 +81,11 @@ One paragraph per line. `#` lines are notes and are not printed.
 | `@page 9` | `[ص 9]` as its own paragraph. Digits only, as printed |
 | `@lang ur` | switches font. `ar` `ur` `fa` `ps` `sd` `en` `hi` |
 | `@cont …` | the rest of a sentence that started on the previous page |
-| `@row a \|\|\| b \|\|\| c` | one table row, in printed order |
-| `@verse a \|\|\| b` | two hemistiches |
+| `@row a ||| b ||| c` | one table row, in printed order |
+| `@verse a ||| b` | two hemistiches |
 | `@title` `@heading1` `@heading2` `@basmala` `@center` `@quote` | as named |
 | `^[note]^` | a Word footnote. The closer is `]^` so a `]` inside the note does not cut it |
-| `{{seen\|why}}` | yellow highlight. Empty left side if nothing was readable: `{{|not read}}` |
+| `{{seen|why}}` | yellow highlight. Empty left side if nothing was readable: `{{|not read}}` |
 | `**lemma**` | bold lemma, such as قوله |
 | `[[blank]]` | a gap the scribe left |
 | `[[ref:ص ٢]]` | a marginal reference |
@@ -89,8 +98,8 @@ These are the failures this skill exists to stop.
 
 - Do not translate. Do not modernize. Do not add punctuation.
 - Do not complete an ayah, a hadith, or a fiqh line from memory or from another edition. A cut line ends `{{|line ends}}`.
-- Do not add harakat that are not printed. Do not add `﴿ ﴾` unless they are printed.
-- Copy `ﷺ ؐ ؓ ؒ ؑ ﷻ` as glyphs. Do not expand them into `حفظہ اللہ` or `صلی اللہ علیہ وسلم`.
+- Do not add harakat that are not printed. Do not add `ؗ ؘ` unless they are printed.
+- Copy `ﷺ ؐ ؑ ؒ ؓ ﷻ` as glyphs. Do not expand them into `حفظہ اللہ` or `صلی اللہ علیہ وسلم`.
 - Urdu `ی ے ہ ک` stays Urdu. Digits stay in the shapes printed. `۳۶۲ تا ۳۶۴` stays a range.
 - A second phone number on the same page does not correct the first.
 - The book's own `لعل` or `في المخطوط` is ink. Copy it. Do not write your own.
@@ -107,7 +116,7 @@ These are the failures this skill exists to stop.
 
 In the user's language, short:
 
-1. The docx, named `Book_pdfA-B_of_N.docx`.
+1. The docx, named from metadata title (sanitized) + `_pdfA-B_of_N.docx` (fallback `Book_pdfA-B_of_N.docx`).
 2. If the gate printed `MISSING`, the first word is **NATAMAM** and the indexes follow. Stop.
 3. Otherwise: indexes read, languages, style, how many `{{ }}`, what `@skip` covers.
 4. Ask for the next range. Do not promise "the rest" from memory.
