@@ -1,0 +1,10 @@
+# One prose page, the shape the body reader and the footnote reader produce together.
+@lang ur
+@pdf 12
+@page 9
+@heading1 مجھے کہنا ہے کچھ اپنی زباں میں
+@center (از قلم سید وجاہت رسول قادری ؒ*)
+غور وفکر۔^[آپ پیرِ طریقت ہیں۔ شعر و سخن میں مخلص ”تاباں“ ہے۔ [حاشیہ] ]^
+@pdf 13
+@page 10
+@cont ایک منظم اور منضبط انداز میں

@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+work/
+pages/
+qa/
+*.docx
+progress.md
+transcript.txt
+layout.jsonl
