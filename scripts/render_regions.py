@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Render one PDF page at its own pixel size and classify the layout.
+"""Render one PDF page at the embedded scan's pixel size and classify it.
 
-Does not upscale. A scanned page whose image is already ~800 px wide stays
-that size. Table pages are detected from ruled lines. A faint footnote rule
-on a low-resolution scan is not invented: the footnote agent reads the body
-crop and lifts a note only when it can see one.
+Zoom is embedded_ppi / 72, and never past the embedded image. A 1:1 render
+of a 150 ppi scan is 72 dpi and drops detail. Table pages are detected from
+ruled lines. A faint footnote rule is not invented.
 """
 import sys
 from pathlib import Path
@@ -12,9 +11,29 @@ from pathlib import Path
 import pymupdf
 
 
+def render_zoom(page):
+    """Match the embedded scan. Never render wider than that image.
+
+    An A4 page (595 pt) whose scan is 1240 px is 150 ppi. A 1:1 render
+    is 72 dpi and drops detail. Zoom is px / page_width, so the pixmap
+    stays at the embedded pixel size and no higher.
+    """
+    width = page.rect.width
+    pixels = 0
+    for image in page.get_image_info():
+        pixels = max(pixels, int(image.get("width") or 0))
+    if pixels <= 0 or width <= 0:
+        return 1.0, 72.0
+    zoom = pixels / width
+    ppi = pixels / (width / 72.0)
+    return zoom, ppi
+
+
 def page_pixmap(page):
-    # 72 dpi: one PDF point is one pixel. These scans are stored at page size.
-    return page.get_pixmap(matrix=pymupdf.Matrix(1, 1), alpha=False, colorspace=pymupdf.csGRAY)
+    zoom, _ppi = render_zoom(page)
+    return page.get_pixmap(
+        matrix=pymupdf.Matrix(zoom, zoom), alpha=False, colorspace=pymupdf.csGRAY,
+    )
 
 
 def _bands(rows, gap=3):
@@ -82,20 +101,23 @@ def classify(pix):
 def save_regions(page, dest_dir, pdf_index):
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
+    zoom, ppi = render_zoom(page)
     pix = page_pixmap(page)
     info = classify(pix)
+    info["ppi"] = round(ppi, 1)
+    info["zoom"] = round(zoom, 3)
     h = pix.height
     rules = rule_bands(pix)
     header_y = rules[0][1] + 2 if rules and rules[0][0] < h * 0.14 else int(h * 0.09)
     rect = page.rect
-    scale = h / rect.height
+    matrix = pymupdf.Matrix(zoom, zoom)
 
     def clip_save(name, y0, y1):
         if y1 - y0 < 8:
             return
-        clip = pymupdf.Rect(0, y0 / scale, rect.width, y1 / scale)
+        clip = pymupdf.Rect(0, y0 / zoom, rect.width, y1 / zoom)
         path = dest / f"p{pdf_index}_{name}.png"
-        page.get_pixmap(matrix=pymupdf.Matrix(1, 1), clip=clip, alpha=False).save(path)
+        page.get_pixmap(matrix=matrix, clip=clip, alpha=False).save(path)
         info.setdefault("regions", {})[name] = str(path)
 
     clip_save("header", 0, header_y)
@@ -133,7 +155,7 @@ def main(argv):
     doc = pymupdf.open(argv[1])
     index = int(argv[2])
     info = save_regions(doc[index - 1], argv[3] if len(argv) > 3 else "pages", index)
-    print(info["kind"], "rules", info["rules"], "ink", info["ink"])
+    print(info["kind"], "rules", info["rules"], "ink", info["ink"], "ppi", info["ppi"])
     for name, path in info["regions"].items():
         print(name, path)
     return 0

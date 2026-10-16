@@ -8,7 +8,7 @@ The kit was first written by Abu Ameer Khusraw for Arena agent mode. This repo i
 
 1. Clone this repo.
 2. `pip install -r requirements.txt`
-3. `python3 -m unittest tests.test_skill`
+3. `make check`
 4. Open a new chat with a vision model. Attach `SKILL.md`, or point the model at this repo, and attach the PDF.
 5. If the host can spawn agents, it should spawn one per file in `agents/`. If it cannot, the same model plays the roles in order. Grok does either: one chat that follows `SKILL.md`, or a crew if the host has subagents.
 
@@ -19,7 +19,13 @@ python3 composer/composer.py work/transcript.txt work/Book_pdf1-15_of_217.docx
 python3 scripts/gate.py work/progress.md work/transcript.txt
 ```
 
-Exit code 2 means the file is not the whole range. The reply has to start with NATAMAM.
+Exit code 2 means the file is not the whole range, a claimed page is thin against its line boxes, or a sentence crosses a page without `@cont`. The reply has to start with NATAMAM. `work/delivery.md` is that report. Do not write it from memory.
+
+Exit 0 is not a finished book. It means every index was claimed, the thin check passed when `lines.json` was present, and `@cont` pairs. It does not mean someone compared the ink. Without `lines.json` the thin check does not run, and a page can be half empty and still claimed.
+
+## Text layer
+
+Do not copy the PDF text layer, and do not copy Archive.org `*_hocr_searchtext.txt.gz` or `*_djvu.txt`. On these Urdu scans the glyphs are visual order and the digits are wrong: `20022` in the layer is not `۲۰۲۲` on the page, and reversing the layer string does not repair it. Line boxes are only for cropping. The JP2 leaves are the second copy to read. `scripts/textlayer_guard.py` writes the line counts. `scripts/audit_digits.py` crops each numeric line.
 
 ## What the model is not allowed to do
 

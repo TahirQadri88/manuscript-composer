@@ -201,5 +201,91 @@ class CrewTests(unittest.TestCase):
         self.assertTrue(gate.ok(report))
 
 
+class JobTests(unittest.TestCase):
+    """Checks added after a gate passed a page that was only half read."""
+
+    def test_thin_page_is_below_the_median(self):
+        full = "کلمہ " * 30
+        transcript = (
+            "@pdf 1\n@page 1\n" + full + "\n"
+            "@pdf 2\n@page 2\n" + full + "\n"
+            "@pdf 3\n@page 3\n" + full + "\n"
+            "@pdf 8\n@page 8\nصرف یہ۔\n"
+        )
+        counts = {str(i): 10 for i in (1, 2, 3, 8)}
+        report = gate.check("range: 1-8\n", transcript, counts)
+        self.assertEqual(report["thin"], [8])
+        self.assertFalse(gate.ok(report))
+        text = gate.delivery_text(report)
+        self.assertTrue(text.startswith("NATAMAM"))
+
+    def test_digit_reversal_is_not_a_repair(self):
+        guard = load("textlayer_guard", ROOT / "scripts" / "textlayer_guard.py")
+        backwards = guard.assess_layer_digits("2202", "۲۰۲۲")
+        self.assertTrue(backwards["reversed"])
+        self.assertFalse(backwards["copy"])
+        # The layer value from the job. Reversing it does not yield the printed year.
+        wrong = guard.assess_layer_digits("20022", "۲۰۲۲")
+        self.assertFalse(wrong["reversed"])
+        self.assertFalse(wrong["same"])
+        self.assertFalse(wrong["copy"])
+        self.assertNotEqual(guard.latin_digits("20022")[::-1], guard.latin_digits("۲۰۲۲"))
+
+    def test_cont_pairing(self):
+        broken = (ROOT / "examples" / "broken-sentence.txt").read_text(encoding="utf-8")
+        report = gate.check("range: 1-2\n", broken)
+        self.assertEqual(report["unpaired"], [{"from": 1, "to": 2}])
+        paired = broken.replace("@pdf 2\n@page 2\nایک منظم۔\n", "@pdf 2\n@page 2\n@cont ایک منظم۔\n")
+        self.assertEqual(gate.check("range: 1-2\n", paired)["unpaired"], [])
+
+    def test_mixed_rtl_and_latin_stay_one_run(self):
+        line = "دیکھیے ISBN-10 0-19-853453-1 آخر"
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        src = Path(tmp.name) / "t.txt"
+        out = Path(tmp.name) / "out.docx"
+        src.write_text("@lang ur\n@pdf 1\n@page 1\n" + line + "\n", encoding="utf-8")
+        app = composer.Composer()
+        app.build(str(src))
+        app.finalize(str(out))
+        body, _, _ = docx_texts(out)
+        self.assertIn(line, body)
+
+    def test_uncertain_marks_become_highlights_and_comments(self):
+        transcript = "@lang ur\n@pdf 1\n@page 1\n{{بت|rest not read}} اور {{|not read}}\n"
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        src = Path(tmp.name) / "t.txt"
+        out = Path(tmp.name) / "out.docx"
+        src.write_text(transcript, encoding="utf-8")
+        app = composer.Composer()
+        app.build(str(src))
+        app.finalize(str(out))
+        with zipfile.ZipFile(out) as z:
+            document = z.read("word/document.xml")
+            comments = z.read("word/comments.xml") if "word/comments.xml" in z.namelist() else b""
+        self.assertEqual(document.count(b"w:highlight"), 2)
+        self.assertEqual(comments.count(b"<w:comment "), 2)
+        report = gate.check("range: 1-1\n", transcript)
+        self.assertEqual(report["uncertain"], 2)
+
+    def test_sheet_marker_and_embedded_ppi(self):
+        body, _, _ = ComposerTests.build(self, "@lang ur\n@pdf 1\n@page 1\n@sheet 7 of 9\nعنوان۔\n")
+        self.assertIn("[شیٹ 7/9]", body)
+        import pymupdf
+        doc = pymupdf.open()
+        page = doc.new_page(width=595, height=842)
+        pix = pymupdf.Pixmap(pymupdf.csGRAY, pymupdf.IRect(0, 0, 1240, 1754), 1)
+        pix.clear_with(255)
+        page.insert_image(page.rect, pixmap=pix)
+        zoom, ppi = regions.render_zoom(page)
+        self.assertAlmostEqual(ppi, 150, delta=1)
+        self.assertAlmostEqual(zoom, 1240 / 595, delta=0.02)
+        rendered = regions.page_pixmap(page)
+        self.assertLessEqual(rendered.width, 1240)
+        self.assertGreater(rendered.width, 1100)
+
+
 if __name__ == "__main__":
     unittest.main()
+

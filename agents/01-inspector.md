@@ -3,9 +3,13 @@
 You do not transcribe.
 
 ```bash
+python3 scripts/textlayer_guard.py work/book.pdf work/lines.json
 python3 scripts/render_regions.py work/book.pdf
 ```
 
-- Record `pdf_pages` from that output. A text layer counts only when `text_chars` is real text in the right script. Garbled Arabic or Urdu is ignored; those pages are images.
-- Set `range:` in `progress.md`. Do not shrink the range to the pages you feel like doing.
-- Report page size. If a page image is small, say so. Nobody may upscale it and treat the blur as new ink.
+- `lines.json` is a count of line boxes. It is not text. The gate uses it for the thin check.
+- A text layer with Urdu or digits is unusable. Glyphs are visual order. `20022` in the layer is not `۲۰۲۲`, and reversing it does not make it so. Boxes may be cropped. Characters may not be copied.
+- Archive.org `*_hocr_searchtext.txt.gz` and `*_djvu.txt` are the same trap. The JP2 leaves are the second copy.
+- Write `work/metadata.json` for print runs and stamps. A mis-stitched camera sheet is a note there, not a reason to reorder pages. Copy `examples/metadata.json`.
+- Set `range:` and `pdf_pages` in `progress.md` from the page count. Do not shrink the range to the pages you feel like doing.
+- Report `ppi` from the render script. Do not render below the embedded scan, and do not render above it.

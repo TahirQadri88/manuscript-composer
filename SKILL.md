@@ -31,7 +31,7 @@ A reader never runs `composer.py`. The composer never reads a page image. The ga
 
 ```bash
 pip install -r requirements.txt
-python3 -m unittest tests.test_skill
+make check
 ```
 
 Put the PDF at `work/book.pdf`. Create `work/`. All paths below are inside `work/` unless they start with the repo root.
@@ -39,34 +39,33 @@ Put the PDF at `work/book.pdf`. Create `work/`. All paths below are inside `work
 ## Loop
 
 1. Inspector writes `progress.md` with `range: 1-N` (the whole PDF, unless the user named a range) and `pdf_pages: N`.
-2. Layout runs, for each PDF index in the range:
+2. Layout runs, for each PDF index in the range. The script prints `ppi`. A 150 ppi scan must not be rendered at 72 dpi, and it must not be rendered past the embedded image:
 
 ```bash
+python3 ../scripts/textlayer_guard.py book.pdf lines.json
 python3 ../scripts/render_regions.py book.pdf INDEX pages
 ```
-
-   It prints `cover`, `blank`, `table`, or `prose`, and writes crops at the scan's own pixel size. Do not upscale.
 3. Cover or blank: `@skip INDEX reason`. A repeated title page is **not** a skip. Transcribe it again.
 4. Table: the table reader writes one `@row` per printed row. Right to left. Do not sort.
 5. Prose: the body reader writes the lines. Then the footnote reader looks at the bottom of the same crop. A note is `^[full note]^`. If there is no note, it writes nothing. It does not leave the note in the body as well.
-6. Second look re-opens the crop under a new filename and checks every digit, every honorific, and every uncertain word. A disagreement becomes `{{first|second: …}}`. It does not pick the nicer reading.
+6. Second look re-opens the crop under a new filename. It checks every digit from `audit_digits.py` (the crop, never the text-layer glyphs), every honorific, and the first and last word of the page. If this page ends mid-sentence, the next page's first line is `@cont`. A disagreement becomes `{{first|second: …}}`. It does not pick the nicer reading, and it does not reverse a digit run to "fix" it.
 7. After the batch, and only then, the composer runs:
 
 ```bash
-# Filename extracted from work/metadata.json title field (sanitized)
+# Filename from work/metadata.json "title", sanitized. Falls back to Book_....
 python3 ../composer/composer.py transcript.txt "$(python3 -c "
-import json,re,os
+import json,re
 try:
   m=json.load(open('metadata.json'))
-  title=re.sub(r'[^A-Za-z0-9_\-]','_',m.get('title','Book')).strip('_')
+  title=re.sub(r'[^A-Za-z0-9_\-]','_',m.get('title','Book')).strip('_') or 'Book'
   print(f'{title}_pdfA-B_of_N.docx')
-except:
+except Exception:
   print('Book_pdfA-B_of_N.docx')
 ")"
-python3 ../scripts/gate.py progress.md transcript.txt
+python3 ../scripts/gate.py progress.md transcript.txt lines.json
 ```
 
-8. Gate exit code 2: the delivery starts with `NATAMAM` and the missing indexes. Do not call the book finished.
+8. The gate writes `delivery.md`. Exit 0 means every index is claimed, no page is thin against its line-box count, and a mid-sentence page is paired with `@cont`. It does not mean the ink was compared line by line. Exit 2: the delivery starts with `NATAMAM`. Do not call the book finished. Without `lines.json` the thin check does not run, and a claimed page can still be half empty.
 
 Clean print: about 15 PDF pages a turn. Handwriting: about 8. Append to the same `transcript.txt`. On the next turn, read `progress.md` and reopen the last page image. Do not rewrite earlier pages from memory.
 
@@ -79,7 +78,7 @@ python3 ../composer/composer.py transcript.txt work/Final_Book_pdf1-N_of_N.docx
 # or use the metadata-derived name with the full range
 ```
 
-The gate must still pass (exit 0) before delivery. Batch files may be kept or discarded; the final file is the complete book.
+The gate must still pass, including the thin check and the `@cont` pairs, and `delivery.md` must not start with NATAMAM. Batch files may be kept or discarded; the final file is the complete book.
 
 ## Transcript
 
@@ -90,6 +89,7 @@ One paragraph per line. `#` lines are notes and are not printed.
 | `@pdf 12` | no — ledger, required for every page you claim to have read |
 | `@skip 3 blank-verso` | no — only watermarks, stamps, scanner backs, blank versos |
 | `@page 9` | `[ص 9]` as its own paragraph. Digits only, as printed |
+| `@sheet 7 of 9` | `[شیٹ 7/9]`. The running sheet of a mis-stitched scan. Not a page number, and not a reason to reorder pages |
 | `@lang ur` | switches font. `ar` `ur` `fa` `ps` `sd` `en` `hi` |
 | `@cont …` | the rest of a sentence that started on the previous page |
 | `@row a ||| b ||| c` | one table row, in printed order |
@@ -109,15 +109,17 @@ These are the failures this skill exists to stop.
 
 - Do not translate. Do not modernize. Do not add punctuation.
 - Do not complete an ayah, a hadith, or a fiqh line from memory or from another edition. A cut line ends `{{|line ends}}`.
-- Do not add harakat that are not printed. Do not add `ؗ ؘ` unless they are printed.
+- Do not add harakat that are not printed. Do not add `﴿ ﴾` unless they are printed.
 - Copy `ﷺ ؐ ؑ ؒ ؓ ﷻ` as glyphs. Do not expand them into `حفظہ اللہ` or `صلی اللہ علیہ وسلم`.
 - Urdu `ی ے ہ ک` stays Urdu. Digits stay in the shapes printed. `۳۶۲ تا ۳۶۴` stays a range.
 - A second phone number on the same page does not correct the first.
 - The book's own `لعل` or `في المخطوط` is ink. Copy it. Do not write your own.
-- A page marker is never a word inside a sentence. Forbidden: `پھر ان کی [ص 10] ایک منظم`. The last words of a page stay on that page.
+- A page marker is never a word inside a sentence. Forbidden: `پھر ان کی [ص 10] ایک منظم`. The last words of a page stay on that page. If they do not finish the sentence, the next PDF page begins with `@cont`.
 - A footnote is not finished at a line break. Forbidden: stopping at `شعر` when the next word is `و سخن`.
 - Do not sort a fihrist. Item 2 on page 18 and item 3 on page 12 stay in that order.
 - Never hand-edit `document.xml`.
+- Do not copy prose or digits out of a text layer. Urdu in the layer is visual order, and digits come out reversed or expanded: the layer's `20022` is not the page's `۲۰۲۲`. Reversing `20022` does not produce `۲۰۲۲`, so do not repair it. Use the line boxes to crop, then read the image. Archive.org `*_hocr_searchtext.txt.gz` and `*_djvu.txt` are the same trap. The JP2 leaves are the second copy worth reading.
+- A camera sheet that looks mis-stitched is recorded in `metadata.json` (`print_runs`, `stamps`). See `examples/metadata.json`. It is not a reason to reorder the book.
 
 ## Style
 
@@ -127,7 +129,7 @@ These are the failures this skill exists to stop.
 
 In the user's language, short:
 
-1. The docx, named from metadata title (sanitized) + `_pdfA-B_of_N.docx` (fallback `Book_pdfA-B_of_N.docx`).
-2. If the gate printed `MISSING`, the first word is **NATAMAM** and the indexes follow. Stop.
-3. Otherwise: indexes read, languages, style, how many `{{ }}`, what `@skip` covers.
+1. The docx, named from the metadata title plus `_pdfA-B_of_N.docx`. If there is no title, `Book_pdfA-B_of_N.docx`.
+2. Read `delivery.md`. If it starts with **NATAMAM**, that is the first word of your message. Stop.
+3. Otherwise say the indexes, the languages, the style, the uncertain count from `delivery.md`, and what `@skip` covers. Say that the gate passed its mechanical checks and that a person still has to proofread.
 4. Ask for the next range. Do not promise "the rest" from memory.

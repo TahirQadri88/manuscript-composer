@@ -396,6 +396,12 @@ class Composer:
                     self.para(cmd, arg, pending_break); pending_break = False
                 elif cmd == "ornament":
                     self.para("ornament", arg or "٭ ٭ ٭", pending_break); pending_break = False
+                elif cmd == "sheet":
+                    parts = arg.lower().split()
+                    if len(parts) != 3 or parts[1] != "of" or not parts[0].isdigit() or not parts[2].isdigit():
+                        raise SystemExit("@sheet needs '7 of 9'")
+                    self.para("marker", f"[شیٹ {parts[0]}/{parts[2]}]", pending_break)
+                    pending_break = False
                 elif cmd == "verse":
                     a, _, b = arg.partition("|||"); self.verse(a, b)
                 elif cmd == "row":

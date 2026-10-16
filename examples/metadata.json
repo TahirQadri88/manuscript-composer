@@ -1,0 +1,16 @@
+{
+  "title": "Book",
+  "title_ur": "",
+  "topic": "",
+  "source": "",
+  "pages": 0,
+  "range": "",
+  "languages": [],
+  "type": "scan",
+  "print_runs": [
+    {"pdf": [1, 9], "note": "one camera sheet. Do not reorder the physical pages because the crop looks mis-stitched."}
+  ],
+  "stamps": [
+    {"pdf": 3, "kind": "library", "skip": true}
+  ]
+}

@@ -1,0 +1,7 @@
+# Page 1 ends mid-sentence. Page 2 does not resume with @cont. The gate must fail.
+@pdf 1
+@page 1
+پھر ان کی
+@pdf 2
+@page 2
+ایک منظم۔
