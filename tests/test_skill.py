@@ -30,6 +30,12 @@ def nastaliq_pdf():
         if path.is_file():
             return path
     return None
+def volume_one():
+    """Majlis-e-Shar'i ke Faisle vol. 1, committed under PDFs/. Typeset, 547 pages."""
+    for path in sorted((ROOT / "PDFs").glob("*.pdf")):
+        if "اول" in path.name:
+            return path
+    return None
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 
@@ -603,6 +609,80 @@ class ReaderCropTests(unittest.TestCase):
             regions.VISION_CAP = original
         self.assertNotIn("split", info)
         self.assertIsInstance(regions.layout_record(info, 102)["body"], str)
+
+
+class PageEdgeTests(unittest.TestCase):
+    """Header, foot and cap, on real pages of volume 1."""
+
+    @classmethod
+    def setUpClass(cls):
+        path = volume_one()
+        if path is None:
+            raise unittest.SkipTest("PDFs/ volume 1 is not on this machine")
+        import pymupdf
+        cls.pymupdf = pymupdf
+        cls.doc = pymupdf.open(path)
+        cls.tmp = tempfile.TemporaryDirectory()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def save(self, index):
+        return regions.save_regions(self.doc[index - 1], self.tmp.name, index)
+
+    def inked(self, path):
+        pix = self.pymupdf.Pixmap(self.pymupdf.csGRAY, self.pymupdf.Pixmap(path))
+        return any(b < 160 for b in pix.samples[::7])
+
+    def test_header_ends_below_the_double_rule(self):
+        # Thin rule at ~59.5 pt, thick at ~62.4-63.4 pt. The old 9% fallback was 62.3 pt.
+        for index in (30, 50, 300):
+            header_y = self.save(index)["header_y"]
+            self.assertGreater(header_y, 63.4, index)
+            self.assertLess(header_y, 70, index)
+
+    def test_no_body_crop_is_blank(self):
+        # PDF 40 ends high; 140 ends a chapter; 453 is a few lines and a footnote.
+        for index in (40, 140, 453):
+            info = self.save(index)
+            for name in ("body", "body_a", "body_b"):
+                if name in info["regions"]:
+                    self.assertTrue(self.inked(info["regions"][name]), (index, name))
+
+    def test_an_isolated_watermark_is_its_own_crop(self):
+        info = self.save(140)
+        self.assertIn("footer", info["regions"])
+        self.assertTrue(self.inked(info["regions"]["footer"]))
+        self.assertLess(info["body_bottom"], 600)
+        self.assertEqual(regions.layout_record(info, 140)["footer"], info["regions"]["footer"])
+
+    def test_a_white_middle_between_text_and_footnote_is_cut(self):
+        info = self.save(453)
+        self.assertIsInstance(info.get("split"), dict)
+
+    def test_cap_can_be_set_for_the_host(self):
+        original = regions.VISION_CAP
+        try:
+            self.assertEqual(regions.main(
+                ["render_regions.py", str(volume_one()), "30", self.tmp.name, "--cap", "2000"]
+            ), 0)
+            self.assertEqual(regions.VISION_CAP, 2000)
+            for name in ("header", "body_a", "body_b", "full"):
+                pix = self.pymupdf.Pixmap(str(Path(self.tmp.name) / f"p30_{name}.png"))
+                self.assertLessEqual(max(pix.width, pix.height), 2000, name)
+        finally:
+            regions.VISION_CAP = original
+        os.environ["MANUSCRIPT_VISION_CAP"] = "2000"
+        try:
+            self.assertEqual(load("regions_env", ROOT / "scripts" / "render_regions.py").VISION_CAP, 2000)
+        finally:
+            del os.environ["MANUSCRIPT_VISION_CAP"]
+
+    def test_a_blank_page_is_not_split_into_two_blanks(self):
+        doc = self.pymupdf.open()
+        info = regions.save_regions(doc.new_page(width=481, height=692), self.tmp.name, 999)
+        self.assertNotIn("body_a", info["regions"])
 
 
 if __name__ == "__main__":

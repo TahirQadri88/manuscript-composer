@@ -25,7 +25,7 @@ Exit 0 is not a finished book. It means every index was claimed once, with somet
 
 ## What a reader is sent
 
-Not the whole page at 72 dpi. `scripts/render_regions.py` classifies at 72 dpi, where its thresholds were tuned, and renders the reader's crops at the embedded scan's own pixels, never upscaled, capped at 2576 px on the long edge. A vision host resizes anything larger, so an A4 page sent whole arrives at about 220 dpi. A body crop that would exceed the cap is split once, through whitespace between two lines, never at the midpoint and never with an overlap. Each half then arrives at up to the scan's own resolution: 318–434 dpi on ten A4 pages measured. Nastaliq that is unreadable at 110 dpi is readable at 400. `layout.jsonl` carries both halves to the body reader.
+Not the whole page at 72 dpi. `scripts/render_regions.py` classifies at 72 dpi, where its thresholds were tuned, and renders the reader's crops at the embedded scan's own pixels, never upscaled, capped at 2576 px on the long edge, or lower for a host that resizes sooner (`--cap 2000`, or `MANUSCRIPT_VISION_CAP=2000`, for Claude Code). A vision host resizes anything larger, so an A4 page sent whole arrives at about 220 dpi. A body crop that would exceed the cap is split once, through whitespace between two lines, never at the midpoint and never with an overlap. Each half then arrives at up to the scan's own resolution: 318–434 dpi on ten A4 pages measured. Nastaliq that is unreadable at 110 dpi is readable at 400. `layout.jsonl` carries both halves to the body reader.
 
 ## Text layer
 
