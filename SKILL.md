@@ -38,16 +38,22 @@ Put the PDF at `work/book.pdf`. Create `work/`. All paths below are inside `work
 
 ## Loop
 
-1. Inspector writes `progress.md` with `range: 1-N` (the whole PDF, unless the user named a range) and `pdf_pages: N`.
-2. Layout runs, for each PDF index in the range. The script prints `ppi`. A 150 ppi scan must not be rendered at 72 dpi, and it must not be rendered past the embedded image:
+1. Inspector writes `range: 1-N` and `pdf_pages: N` into `progress.md` from the PDF's own page count. Never type them by hand: the gate trusts `range:` completely.
+
+```bash
+python3 ../scripts/init_progress.py book.pdf progress.md        # whole book
+python3 ../scripts/init_progress.py book.pdf progress.md 12-26  # a range the user named
+```
+
+2. Layout runs, for each PDF index in the range. Classification uses a 72 dpi render, because its thresholds were tuned there. The crops a reader receives are rendered at the embedded scan's own pixels (300 dpi when the page has no embedded image), never upscaled past them, and capped at 2576 px on the long edge, the size above which a vision host resizes the image. A body crop that would exceed the cap is split once, through whitespace between two lines, into `p{N}_body_a.png` (top) and `p{N}_body_b.png` (bottom). On a high-resolution A4 scan that is the difference between about 220 dpi for the whole page and 318–434 dpi per half, measured on ten pages. A half is never sharper than the scan itself. The script prints `ppi`, each crop's dpi, the split, and the `layout.jsonl` line:
 
 ```bash
 python3 ../scripts/textlayer_guard.py book.pdf lines.json
-python3 ../scripts/render_regions.py book.pdf INDEX pages
+python3 ../scripts/render_regions.py book.pdf INDEX pages layout.jsonl
 ```
 3. Cover or blank: `@skip INDEX reason`. A repeated title page is **not** a skip. Transcribe it again.
 4. Table: the table reader writes one `@row` per printed row. Right to left. Do not sort.
-5. Prose: the body reader writes the lines. Then the footnote reader looks at the bottom of the same crop. A note is `^[full note]^`. If there is no note, it writes nothing. It does not leave the note in the body as well.
+5. Prose: the body reader writes the lines, from both halves when the body was split, as one `@pdf` block. Then the footnote reader looks at the bottom of the same crop (the bottom half when split). A note is `^[full note]^`. If there is no note, it writes nothing. It does not leave the note in the body as well.
 6. Second look re-opens the crop under a new filename. It checks every digit from `audit_digits.py` (the crop, never the text-layer glyphs), every honorific, and the first and last word of the page. If this page ends mid-sentence, the next page's first line is `@cont`. A disagreement becomes `{{first|second: …}}`. It does not pick the nicer reading, and it does not reverse a digit run to "fix" it.
 7. After the batch, and only then, the composer runs:
 
@@ -62,10 +68,10 @@ try:
 except Exception:
   print('Book_pdfA-B_of_N.docx')
 ")"
-python3 ../scripts/gate.py progress.md transcript.txt lines.json
+python3 ../scripts/gate.py progress.md transcript.txt lines.json book.pdf
 ```
 
-8. The gate writes `delivery.md`. Exit 0 means every index is claimed, no page is thin against its line-box count, and a mid-sentence page is paired with `@cont`. It does not mean the ink was compared line by line. Exit 2: the delivery starts with `NATAMAM`. Do not call the book finished. Without `lines.json` the thin check does not run, and a claimed page can still be half empty.
+8. The gate writes `delivery.md`. Exit 0 means every index is claimed exactly once, no `@pdf` is empty, no index is outside the PDF, no page is thin against its line-box count, and a mid-sentence page is paired with `@cont`. It does not mean the ink was compared line by line. Exit 2: the delivery starts with `NATAMAM`. Do not call the book finished. Without `lines.json` the thin check does not run, and a claimed page can still be half empty. Without `book.pdf` an index the PDF does not have is not looked for. `REPEATED` does not fail the gate: it names a page where 8 or more words appear twice. Send that page back to the second look, which re-reads the image.
 
 Clean print: about 15 PDF pages a turn. Handwriting: about 8. Append to the same `transcript.txt`. On the next turn, read `progress.md` and reopen the last page image. Do not rewrite earlier pages from memory.
 
@@ -101,7 +107,7 @@ One paragraph per line. `#` lines are notes and are not printed.
 | `[[blank]]` | a gap the scribe left |
 | `[[ref:ص ٢]]` | a marginal reference |
 
-A page you read starts with `@pdf`, then `@page`, then the text. `@skip` replaces both. There is no third option.
+A page you read starts with `@pdf`, then `@page`, then the text. `@skip` replaces both. There is no third option: a bare `@pdf`, the same index twice, or an index the PDF does not have fails the gate.
 
 ## Ink rules
 
@@ -109,6 +115,7 @@ These are the failures this skill exists to stop.
 
 - Do not translate. Do not modernize. Do not add punctuation.
 - Do not complete an ayah, a hadith, or a fiqh line from memory or from another edition. A cut line ends `{{|line ends}}`.
+- Never output the same sentence twice. If a clause appears to repeat, read the image again before writing it. A clause read twice comes out fluent and unmarked, and the gate can only flag it.
 - Do not add harakat that are not printed. Do not add `﴿ ﴾` unless they are printed.
 - Copy `ﷺ ؐ ؑ ؒ ؓ ﷻ` as glyphs. Do not expand them into `حفظہ اللہ` or `صلی اللہ علیہ وسلم`.
 - Urdu `ی ے ہ ک` stays Urdu. Digits stay in the shapes printed. `۳۶۲ تا ۳۶۴` stays a range.
@@ -131,5 +138,5 @@ In the user's language, short:
 
 1. The docx, named from the metadata title plus `_pdfA-B_of_N.docx`. If there is no title, `Book_pdfA-B_of_N.docx`.
 2. Read `delivery.md`. If it starts with **NATAMAM**, that is the first word of your message. Stop.
-3. Otherwise say the indexes, the languages, the style, the uncertain count from `delivery.md`, and what `@skip` covers. Say that the gate passed its mechanical checks and that a person still has to proofread.
+3. Otherwise say the indexes, the languages, the style, the uncertain count from `delivery.md`, any `REPEATED` page not yet re-read, and what `@skip` covers. Say that the gate passed its mechanical checks and that a person still has to proofread.
 4. Ask for the next range. Do not promise "the rest" from memory.

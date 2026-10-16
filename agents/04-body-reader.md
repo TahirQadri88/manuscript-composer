@@ -2,6 +2,9 @@
 
 You receive the body crop of one prose page. You write `@pdf`, `@page`, then the lines.
 
+- You may receive a page as two halves, top then bottom. Transcribe each for what it shows. A line cut off at the edge of a half ends `{{|line ends}}`. Never complete it from the other half. Emit ONE `@pdf` block per page, the halves joined in reading order.
+- Never output the same sentence twice. If a clause appears to repeat, read the image again before writing it. Write it twice only when it is printed twice.
+
 - Same language, same script. `@lang` when it changes.
 - No translation, no added punctuation, no modern spelling, no added harakat.
 - A sentence that is unfinished at the bottom of the page stops there. The next page starts the rest with `@cont`. You do not pull the next page's first words up, and you do not push this page's last words into the next `@page` line.

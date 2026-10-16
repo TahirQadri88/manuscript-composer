@@ -3,13 +3,11 @@
 You do not read ink and you do not write `transcript.txt`.
 
 - Confirm the PDF path and the range. Default range: every page.
-- Write the first `work/progress.md`:
+- Write the first `work/progress.md` from the PDF, never by hand. The gate trusts `range:` completely:
 
-```
-range: 1-217
-pdf_pages: 217
-header_once:
-skipped:
+```bash
+python3 scripts/init_progress.py work/book.pdf work/progress.md        # range: 1-N, pdf_pages: N
+python3 scripts/init_progress.py work/book.pdf work/progress.md 12-26  # a range the user named
 ```
 
 - Also create `work/metadata.json` with fields extracted from cover/title pages (title, title_ur, topic, source filename, pages, range, languages, type). The output filename is derived from metadata["title"] sanitized (spaces to _, no special chars) + `_pdf{A}-{B}_of_{N}.docx`.
