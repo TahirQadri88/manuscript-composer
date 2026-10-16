@@ -12,6 +12,8 @@ The kit was first written by Abu Ameer Khusraw for Arena agent mode. This repo i
 4. Open a new chat with a vision model. Attach `SKILL.md`, or point the model at this repo, and attach the PDF.
 5. If the host can spawn agents, it should spawn one per file in `agents/`. If it cannot, the same model plays the roles in order. Grok does either: one chat that follows `SKILL.md`, or a crew if the host has subagents.
 
+A free chat cannot hold a whole book. Do it a batch per chat: keep `work/`, and start each chat with `python3 scripts/next_batch.py work`. It prints what is done, what to fix, and the next 15 pages to render and read. No API key, no paid model: the chat is the reader.
+
 The model writes `work/transcript.txt`. Then:
 
 ```bash

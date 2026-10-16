@@ -412,6 +412,49 @@ class RepeatTests(unittest.TestCase):
         self.assertIn("Never output the same sentence twice", skill)
 
 
+class ResumeTests(unittest.TestCase):
+    """A free chat cannot hold a book. Each new chat starts from next_batch.py."""
+
+    def setUp(self):
+        self.batch = load("next_batch", ROOT / "scripts" / "next_batch.py")
+
+    def test_next_batch_is_the_first_unclaimed_pages_in_order(self):
+        done = "".join(f"@pdf {i}\n@page {i}\nمتن۔\n" for i in (1, 2, 3, 5))
+        state = self.batch.plan("range: 1-40\npdf_pages: 547\n", done, size=4)
+        self.assertEqual(state["batch"], [4, 6, 7, 8])
+        self.assertEqual(state["claimed"], 4)
+        text = self.batch.handoff(state, "work", cap=2000)
+        self.assertIn("render_regions.py work/book.pdf 4 work/pages work/layout.jsonl --cap 2000", text)
+        self.assertNotIn("Done reading", text)
+
+    def test_a_page_ending_mid_sentence_carries_into_the_next_chat(self):
+        done = "@pdf 1\n@page 1\nپھر ان کی\n"
+        state = self.batch.plan("range: 1-5\n", done)
+        self.assertEqual(state["cont_from"], 1)
+        self.assertIn("The first text line of PDF 2 is `@cont`", self.batch.handoff(state))
+
+    def test_claimed_problems_are_fixed_before_reading_on(self):
+        done = "@pdf 1\n@page 1\nمتن۔\n@pdf 1\n@page 1\nمتن۔\n@pdf 2\n"
+        state = self.batch.plan("range: 1-3\n", done)
+        self.assertEqual(state["redo"]["duplicates"], [1])
+        self.assertEqual(state["redo"]["bare"], [2])
+        self.assertIn("## Fix first", self.batch.handoff(state))
+
+    def test_a_finished_range_says_build_and_gate(self):
+        done = "".join(f"@pdf {i}\n@page {i}\nمتن۔\n" for i in (1, 2))
+        text = self.batch.handoff(self.batch.plan("range: 1-2\npdf_pages: 547\n", done))
+        self.assertIn("Done reading", text)
+        self.assertIn("Final_Book_pdf1-2_of_547.docx", text)
+
+    def test_a_checked_repeat_is_not_flagged_again(self):
+        clause = "اور جو شخص اپنی کاہلی سے نماز میں دیر کرے وہ گنہگار ہے"
+        page = "@pdf 1\n@page 1\n" + clause + " " + clause + "\n"
+        self.assertEqual(len(gate.check("range: 1-1\n", page)["repeated"]), 1)
+        checked = page.replace("@page 1\n", "@page 1\n# repeat-checked: printed twice\n")
+        self.assertEqual(gate.check("range: 1-1\n", checked)["repeated"], [])
+        self.assertEqual(self.batch.plan("range: 1-1\n", checked)["redo"]["repeated"], [])
+
+
 class ProgressTests(unittest.TestCase):
     def test_range_comes_from_the_page_count(self):
         progress = load("init_progress", ROOT / "scripts" / "init_progress.py")

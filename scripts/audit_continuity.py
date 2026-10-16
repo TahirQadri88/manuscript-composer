@@ -59,7 +59,11 @@ def split_pages(transcript):
     current = None
     for raw in transcript.splitlines():
         line = raw.strip()
-        if not line or line.startswith("#"):
+        if not line:
+            continue
+        if line.startswith("#"):
+            if current is not None:
+                current["notes"].append(line)
             continue
         if line.startswith("@pdf ") or line.startswith("@skip "):
             parts = line.split()
@@ -69,6 +73,7 @@ def split_pages(transcript):
                 "pdf": int(parts[1]),
                 "kind": "skip" if line.startswith("@skip") else "read",
                 "lines": [],
+                "notes": [],
             }
             pages.append(current)
             continue
@@ -158,11 +163,15 @@ def repeated_runs(pages, n=8):
 
     Flag for re-read only. A book can repeat itself; a reader that read
     one passage twice looks the same in the text, and only the image can
-    tell them apart.
+    tell them apart. After the second look has re-read the image and found
+    the passage printed twice, it writes `# repeat-checked` in that page's
+    block, and the page is no longer flagged.
     """
     found = []
     for page in pages:
         if page["kind"] != "read":
+            continue
+        if any(note.startswith("# repeat-checked") for note in page.get("notes", [])):
             continue
         words = page_words(page["lines"])
         first = {}

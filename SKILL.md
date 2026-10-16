@@ -73,7 +73,18 @@ python3 ../scripts/gate.py progress.md transcript.txt lines.json book.pdf
 
 8. The gate writes `delivery.md`. Exit 0 means every index is claimed exactly once, no `@pdf` is empty, no index is outside the PDF, no page is thin against its line-box count, and a mid-sentence page is paired with `@cont`. It does not mean the ink was compared line by line. Exit 2: the delivery starts with `NATAMAM`. Do not call the book finished. Without `lines.json` the thin check does not run, and a claimed page can still be half empty. Without `book.pdf` an index the PDF does not have is not looked for. `REPEATED` does not fail the gate: it names a page where 8 or more words appear twice. Send that page back to the second look, which re-reads the image.
 
-Clean print: about 15 PDF pages a turn. Handwriting: about 8. Append to the same `transcript.txt`. On the next turn, read `progress.md` and reopen the last page image. Do not rewrite earlier pages from memory.
+Clean print: about 15 PDF pages a turn. Handwriting: about 8. Append to the same `transcript.txt`. Do not rewrite earlier pages from memory.
+
+### One batch per chat
+
+No free chat holds a whole book, and a chat that tries stops mid book. Keep `work/` between chats (`book.pdf`, `progress.md`, `transcript.txt`, `lines.json`) and start every chat, and end every batch, with:
+
+```bash
+python3 ../scripts/next_batch.py .              # 15 pages; --size 8 for handwriting
+python3 ../scripts/next_batch.py . --cap 2000   # a host that resizes images above 2000 px
+```
+
+It writes `next_batch.md`: how many indexes are claimed, anything claimed but broken to fix first (a duplicate, a bare `@pdf`, a missing `@cont`, an unchecked repeat), the render commands for the next pages, and whether the first of them starts with `@cont`. Do that batch, append, run it again, stop. When every index is claimed it prints the composer and gate commands for the single final file.
 
 ### Final single file
 
