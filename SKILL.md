@@ -45,7 +45,7 @@ python3 ../scripts/init_progress.py book.pdf progress.md        # whole book
 python3 ../scripts/init_progress.py book.pdf progress.md 12-26  # a range the user named
 ```
 
-2. Layout runs, for each PDF index in the range. Classification uses a 72 dpi render, because its thresholds were tuned there. The crops a reader receives are rendered at the embedded scan's own pixels (300 dpi when the page has no embedded image), never upscaled past them, and capped at 2576 px on the long edge, the size above which a vision host resizes the image. A body crop that would exceed the cap is split once, through whitespace between two lines, into `p{N}_body_a.png` (top) and `p{N}_body_b.png` (bottom). On a high-resolution A4 scan that is the difference between about 220 dpi for the whole page and 318–434 dpi per half, measured on ten pages. A half is never sharper than the scan itself. The script prints `ppi`, each crop's dpi, the split, and the `layout.jsonl` line:
+2. Layout runs, for each PDF index in the range. Classification uses a 72 dpi render, because its thresholds were tuned there. The crops a reader receives are rendered at the embedded scan's own pixels (300 dpi when the page has no embedded image), never upscaled past them, and capped at 2576 px on the long edge, the size above which a vision host resizes the image. A host that resizes sooner gets its own cap: Claude Code's image viewer was measured at 2000 px, so there pass `--cap 2000` or set `MANUSCRIPT_VISION_CAP=2000`. The header crop ends below the running-header rule, found on the page, not at a fixed fraction. The body ends at the last line of text, so the white under a short page is not sent, and an isolated block at the foot of the page (a page number, an uploader's watermark) is cut into its own `footer` crop. A body crop that would exceed the cap is split once, through whitespace between two lines, into `p{N}_body_a.png` (top) and `p{N}_body_b.png` (bottom). On a high-resolution A4 scan that is the difference between about 220 dpi for the whole page and 318–434 dpi per half, measured on ten pages. A half is never sharper than the scan itself. The script prints `ppi`, each crop's dpi, the split, and the `layout.jsonl` line:
 
 ```bash
 python3 ../scripts/textlayer_guard.py book.pdf lines.json
@@ -73,7 +73,18 @@ python3 ../scripts/gate.py progress.md transcript.txt lines.json book.pdf
 
 8. The gate writes `delivery.md`. Exit 0 means every index is claimed exactly once, no `@pdf` is empty, no index is outside the PDF, no page is thin against its line-box count, and a mid-sentence page is paired with `@cont`. It does not mean the ink was compared line by line. Exit 2: the delivery starts with `NATAMAM`. Do not call the book finished. Without `lines.json` the thin check does not run, and a claimed page can still be half empty. Without `book.pdf` an index the PDF does not have is not looked for. `REPEATED` does not fail the gate: it names a page where 8 or more words appear twice. Send that page back to the second look, which re-reads the image.
 
-Clean print: about 15 PDF pages a turn. Handwriting: about 8. Append to the same `transcript.txt`. On the next turn, read `progress.md` and reopen the last page image. Do not rewrite earlier pages from memory.
+Clean print: about 15 PDF pages a turn. Handwriting: about 8. Append to the same `transcript.txt`. Do not rewrite earlier pages from memory.
+
+### One batch per chat
+
+No free chat holds a whole book, and a chat that tries stops mid book. Keep `work/` between chats (`book.pdf`, `progress.md`, `transcript.txt`, `lines.json`) and start every chat, and end every batch, with:
+
+```bash
+python3 ../scripts/next_batch.py .              # 15 pages; --size 8 for handwriting
+python3 ../scripts/next_batch.py . --cap 2000   # a host that resizes images above 2000 px
+```
+
+It writes `next_batch.md`: how many indexes are claimed, anything claimed but broken to fix first (a duplicate, a bare `@pdf`, a missing `@cont`, an unchecked repeat), the render commands for the next pages, and whether the first of them starts with `@cont`. Do that batch, append, run it again, stop. When every index is claimed it prints the composer and gate commands for the single final file.
 
 ### Final single file
 

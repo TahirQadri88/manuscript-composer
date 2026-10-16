@@ -12,6 +12,8 @@ The kit was first written by Abu Ameer Khusraw for Arena agent mode. This repo i
 4. Open a new chat with a vision model. Attach `SKILL.md`, or point the model at this repo, and attach the PDF.
 5. If the host can spawn agents, it should spawn one per file in `agents/`. If it cannot, the same model plays the roles in order. Grok does either: one chat that follows `SKILL.md`, or a crew if the host has subagents.
 
+A free chat cannot hold a whole book. Do it a batch per chat: keep `work/`, and start each chat with `python3 scripts/next_batch.py work`. It prints what is done, what to fix, and the next 15 pages to render and read. No API key, no paid model: the chat is the reader.
+
 The model writes `work/transcript.txt`. Then:
 
 ```bash
@@ -25,7 +27,7 @@ Exit 0 is not a finished book. It means every index was claimed once, with somet
 
 ## What a reader is sent
 
-Not the whole page at 72 dpi. `scripts/render_regions.py` classifies at 72 dpi, where its thresholds were tuned, and renders the reader's crops at the embedded scan's own pixels, never upscaled, capped at 2576 px on the long edge. A vision host resizes anything larger, so an A4 page sent whole arrives at about 220 dpi. A body crop that would exceed the cap is split once, through whitespace between two lines, never at the midpoint and never with an overlap. Each half then arrives at up to the scan's own resolution: 318–434 dpi on ten A4 pages measured. Nastaliq that is unreadable at 110 dpi is readable at 400. `layout.jsonl` carries both halves to the body reader.
+Not the whole page at 72 dpi. `scripts/render_regions.py` classifies at 72 dpi, where its thresholds were tuned, and renders the reader's crops at the embedded scan's own pixels, never upscaled, capped at 2576 px on the long edge, or lower for a host that resizes sooner (`--cap 2000`, or `MANUSCRIPT_VISION_CAP=2000`, for Claude Code). A vision host resizes anything larger, so an A4 page sent whole arrives at about 220 dpi. A body crop that would exceed the cap is split once, through whitespace between two lines, never at the midpoint and never with an overlap. Each half then arrives at up to the scan's own resolution: 318–434 dpi on ten A4 pages measured. Nastaliq that is unreadable at 110 dpi is readable at 400. `layout.jsonl` carries both halves to the body reader.
 
 ## Text layer
 

@@ -12,7 +12,8 @@ python3 scripts/init_progress.py work/book.pdf work/progress.md 12-26  # a range
 
 - Also create `work/metadata.json` with fields extracted from cover/title pages (title, title_ur, topic, source filename, pages, range, languages, type). The output filename is derived from metadata["title"] sanitized (spaces to _, no special chars) + `_pdf{A}-{B}_of_{N}.docx`.
 
-- Call the other roles in the order in `SKILL.md`. One batch at a time (15 pages of clean print, 8 of handwriting).
+- Start every chat with `python3 scripts/next_batch.py work` and work from `work/next_batch.md`. Fix what it lists under "Fix first" before reading new pages.
+- Call the other roles in the order in `SKILL.md`. One batch at a time (15 pages of clean print, 8 of handwriting). When the batch is appended, run `next_batch.py` again and stop. Do not start a second batch in the same chat.
 - After the gate, you are the only role that speaks to the user.
 - If the gate exits 2, your first word is NATAMAM, taken from `delivery.md`. You do not ask a reader to invent the missing or thin pages.
 - If it exits 0, you still tell the user the mechanical checks passed and a person has to proofread. A green gate is not a finished book.

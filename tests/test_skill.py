@@ -30,6 +30,12 @@ def nastaliq_pdf():
         if path.is_file():
             return path
     return None
+def volume_one():
+    """Majlis-e-Shar'i ke Faisle vol. 1, committed under PDFs/. Typeset, 547 pages."""
+    for path in sorted((ROOT / "PDFs").glob("*.pdf")):
+        if "اول" in path.name:
+            return path
+    return None
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 
@@ -406,6 +412,49 @@ class RepeatTests(unittest.TestCase):
         self.assertIn("Never output the same sentence twice", skill)
 
 
+class ResumeTests(unittest.TestCase):
+    """A free chat cannot hold a book. Each new chat starts from next_batch.py."""
+
+    def setUp(self):
+        self.batch = load("next_batch", ROOT / "scripts" / "next_batch.py")
+
+    def test_next_batch_is_the_first_unclaimed_pages_in_order(self):
+        done = "".join(f"@pdf {i}\n@page {i}\nمتن۔\n" for i in (1, 2, 3, 5))
+        state = self.batch.plan("range: 1-40\npdf_pages: 547\n", done, size=4)
+        self.assertEqual(state["batch"], [4, 6, 7, 8])
+        self.assertEqual(state["claimed"], 4)
+        text = self.batch.handoff(state, "work", cap=2000)
+        self.assertIn("render_regions.py work/book.pdf 4 work/pages work/layout.jsonl --cap 2000", text)
+        self.assertNotIn("Done reading", text)
+
+    def test_a_page_ending_mid_sentence_carries_into_the_next_chat(self):
+        done = "@pdf 1\n@page 1\nپھر ان کی\n"
+        state = self.batch.plan("range: 1-5\n", done)
+        self.assertEqual(state["cont_from"], 1)
+        self.assertIn("The first text line of PDF 2 is `@cont`", self.batch.handoff(state))
+
+    def test_claimed_problems_are_fixed_before_reading_on(self):
+        done = "@pdf 1\n@page 1\nمتن۔\n@pdf 1\n@page 1\nمتن۔\n@pdf 2\n"
+        state = self.batch.plan("range: 1-3\n", done)
+        self.assertEqual(state["redo"]["duplicates"], [1])
+        self.assertEqual(state["redo"]["bare"], [2])
+        self.assertIn("## Fix first", self.batch.handoff(state))
+
+    def test_a_finished_range_says_build_and_gate(self):
+        done = "".join(f"@pdf {i}\n@page {i}\nمتن۔\n" for i in (1, 2))
+        text = self.batch.handoff(self.batch.plan("range: 1-2\npdf_pages: 547\n", done))
+        self.assertIn("Done reading", text)
+        self.assertIn("Final_Book_pdf1-2_of_547.docx", text)
+
+    def test_a_checked_repeat_is_not_flagged_again(self):
+        clause = "اور جو شخص اپنی کاہلی سے نماز میں دیر کرے وہ گنہگار ہے"
+        page = "@pdf 1\n@page 1\n" + clause + " " + clause + "\n"
+        self.assertEqual(len(gate.check("range: 1-1\n", page)["repeated"]), 1)
+        checked = page.replace("@page 1\n", "@page 1\n# repeat-checked: printed twice\n")
+        self.assertEqual(gate.check("range: 1-1\n", checked)["repeated"], [])
+        self.assertEqual(self.batch.plan("range: 1-1\n", checked)["redo"]["repeated"], [])
+
+
 class ProgressTests(unittest.TestCase):
     def test_range_comes_from_the_page_count(self):
         progress = load("init_progress", ROOT / "scripts" / "init_progress.py")
@@ -603,6 +652,80 @@ class ReaderCropTests(unittest.TestCase):
             regions.VISION_CAP = original
         self.assertNotIn("split", info)
         self.assertIsInstance(regions.layout_record(info, 102)["body"], str)
+
+
+class PageEdgeTests(unittest.TestCase):
+    """Header, foot and cap, on real pages of volume 1."""
+
+    @classmethod
+    def setUpClass(cls):
+        path = volume_one()
+        if path is None:
+            raise unittest.SkipTest("PDFs/ volume 1 is not on this machine")
+        import pymupdf
+        cls.pymupdf = pymupdf
+        cls.doc = pymupdf.open(path)
+        cls.tmp = tempfile.TemporaryDirectory()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def save(self, index):
+        return regions.save_regions(self.doc[index - 1], self.tmp.name, index)
+
+    def inked(self, path):
+        pix = self.pymupdf.Pixmap(self.pymupdf.csGRAY, self.pymupdf.Pixmap(path))
+        return any(b < 160 for b in pix.samples[::7])
+
+    def test_header_ends_below_the_double_rule(self):
+        # Thin rule at ~59.5 pt, thick at ~62.4-63.4 pt. The old 9% fallback was 62.3 pt.
+        for index in (30, 50, 300):
+            header_y = self.save(index)["header_y"]
+            self.assertGreater(header_y, 63.4, index)
+            self.assertLess(header_y, 70, index)
+
+    def test_no_body_crop_is_blank(self):
+        # PDF 40 ends high; 140 ends a chapter; 453 is a few lines and a footnote.
+        for index in (40, 140, 453):
+            info = self.save(index)
+            for name in ("body", "body_a", "body_b"):
+                if name in info["regions"]:
+                    self.assertTrue(self.inked(info["regions"][name]), (index, name))
+
+    def test_an_isolated_watermark_is_its_own_crop(self):
+        info = self.save(140)
+        self.assertIn("footer", info["regions"])
+        self.assertTrue(self.inked(info["regions"]["footer"]))
+        self.assertLess(info["body_bottom"], 600)
+        self.assertEqual(regions.layout_record(info, 140)["footer"], info["regions"]["footer"])
+
+    def test_a_white_middle_between_text_and_footnote_is_cut(self):
+        info = self.save(453)
+        self.assertIsInstance(info.get("split"), dict)
+
+    def test_cap_can_be_set_for_the_host(self):
+        original = regions.VISION_CAP
+        try:
+            self.assertEqual(regions.main(
+                ["render_regions.py", str(volume_one()), "30", self.tmp.name, "--cap", "2000"]
+            ), 0)
+            self.assertEqual(regions.VISION_CAP, 2000)
+            for name in ("header", "body_a", "body_b", "full"):
+                pix = self.pymupdf.Pixmap(str(Path(self.tmp.name) / f"p30_{name}.png"))
+                self.assertLessEqual(max(pix.width, pix.height), 2000, name)
+        finally:
+            regions.VISION_CAP = original
+        os.environ["MANUSCRIPT_VISION_CAP"] = "2000"
+        try:
+            self.assertEqual(load("regions_env", ROOT / "scripts" / "render_regions.py").VISION_CAP, 2000)
+        finally:
+            del os.environ["MANUSCRIPT_VISION_CAP"]
+
+    def test_a_blank_page_is_not_split_into_two_blanks(self):
+        doc = self.pymupdf.open()
+        info = regions.save_regions(doc.new_page(width=481, height=692), self.tmp.name, 999)
+        self.assertNotIn("body_a", info["regions"])
 
 
 if __name__ == "__main__":
