@@ -5,6 +5,7 @@ the coverage gate, and layout classification of a real scan.
 import os
 import importlib.util
 import tempfile
+import sys
 import unittest
 import zipfile
 from pathlib import Path
@@ -453,6 +454,88 @@ class ResumeTests(unittest.TestCase):
         checked = page.replace("@page 1\n", "@page 1\n# repeat-checked: printed twice\n")
         self.assertEqual(gate.check("range: 1-1\n", checked)["repeated"], [])
         self.assertEqual(self.batch.plan("range: 1-1\n", checked)["redo"]["repeated"], [])
+
+
+class BookTests(unittest.TestCase):
+    """The book carried across chats: start, next, save, finish."""
+
+    GIT = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+           "GIT_COMMITTER_EMAIL": "t@t", "GIT_CONFIG_GLOBAL": "/dev/null"}
+
+    def run_book(self, cwd, *args):
+        import subprocess
+        env = dict(os.environ, **self.GIT)
+        return subprocess.run([sys.executable, str(ROOT / "scripts" / "book.py"), *args],
+                              cwd=cwd, env=env, capture_output=True, text=True)
+
+    def git(self, cwd, *args):
+        import subprocess
+        subprocess.run(["git", *args], cwd=cwd, env=dict(os.environ, **self.GIT),
+                       check=True, capture_output=True)
+
+    def make_pdf(self, folder, pages=3):
+        import pymupdf
+        doc = pymupdf.open()
+        for n in range(pages):
+            page = doc.new_page(width=481, height=692)
+            for y in range(90, 650, 18):
+                page.insert_text((60, y), f"line {y} of page {n + 1}", fontsize=11)
+        (folder / "PDFs").mkdir(exist_ok=True)
+        doc.save(folder / "PDFs" / "book.pdf")
+        return "PDFs/book.pdf"
+
+    def page(self, n):
+        return f"@pdf {n}\n@page {n}\nمتن۔\n"
+
+    def test_a_book_runs_start_to_finish_locally(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        cwd = Path(tmp.name)
+        pdf = self.make_pdf(cwd)
+        self.assertEqual(self.run_book(cwd, "start", pdf, "--name", "t", "--no-git").returncode, 0)
+        out = self.run_book(cwd, "next", "--size", "2", "--no-git")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("## Read PDF 1, 2", out.stdout)
+        self.assertTrue((cwd / "books/t/pages/p1_full.png").is_file())
+        batch = cwd / "books/t/batch.txt"
+        batch.write_text(self.page(1), encoding="utf-8")
+        refused = self.run_book(cwd, "save", "--no-git")
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("NOT SAVED", refused.stderr)
+        batch.write_text(self.page(1) + self.page(2), encoding="utf-8")
+        self.assertEqual(self.run_book(cwd, "save", "--no-git").returncode, 0)
+        self.assertIn("## Read PDF 3", self.run_book(cwd, "next", "--no-git").stdout)
+        batch.write_text(self.page(3), encoding="utf-8")
+        self.run_book(cwd, "save", "--no-git")
+        self.assertIn("book.py finish", self.run_book(cwd, "next", "--no-git").stdout)
+        done = self.run_book(cwd, "finish", "--no-git")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertTrue(done.stdout.startswith("CLAIMED"))
+        self.assertTrue((cwd / "books/t/t_pdf1-3_of_3.docx").is_file())
+
+    def test_a_new_chat_finds_the_book_on_its_branch(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        self.git(root, "init", "-q", "--bare", "remote.git")
+        first = root / "chat1"
+        self.git(root, "clone", "-q", "remote.git", "chat1")
+        pdf = self.make_pdf(first, pages=2)
+        self.git(first, "add", pdf)
+        self.git(first, "commit", "-q", "-m", "pdf")
+        self.git(first, "push", "-q", "origin", "HEAD")
+        self.assertEqual(self.run_book(first, "start", pdf, "--name", "t").returncode, 0)
+        self.run_book(first, "next")
+        (first / "books/t/batch.txt").write_text(self.page(1) + self.page(2), encoding="utf-8")
+        saved = self.run_book(first, "save")
+        self.assertIn("pushed to origin/book/t", saved.stdout, saved.stderr)
+        # A fresh chat: a new clone with no books/ and nothing carried by hand.
+        self.git(root, "clone", "-q", "remote.git", "chat2")
+        second = root / "chat2"
+        self.assertFalse((second / "books").exists())
+        nxt = self.run_book(second, "next")
+        self.assertIn("2 of 2 PDF pages claimed", nxt.stdout, nxt.stderr)
+        self.assertIn("book.py finish", nxt.stdout)
 
 
 class ProgressTests(unittest.TestCase):
