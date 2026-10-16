@@ -480,6 +480,27 @@ class SplitTests(unittest.TestCase):
         page.insert_image(pymupdf.Rect(-370, 0, 370, 570), pixmap=pix, keep_proportion=False)
         self.assertAlmostEqual(regions.embedded_ppi(page), 1540 / (740 / 72), delta=2)
 
+    def test_a_logo_on_a_typeset_page_is_not_the_scan(self):
+        import pymupdf
+        doc = pymupdf.open()
+        page = doc.new_page(width=595, height=842)
+        logo = pymupdf.Pixmap(pymupdf.csGRAY, pymupdf.IRect(0, 0, 269, 56), 0)
+        logo.clear_with(0)
+        # Majlis-e-Shar'i vol. 1: a 269 px logo, 97 pt wide, over vector Urdu.
+        page.insert_image(pymupdf.Rect(385, 105, 482, 126), pixmap=logo)
+        self.assertIsNone(regions.embedded_ppi(page))
+        self.assertEqual(regions.native_zoom(page), regions.READ_DPI / 72)
+
+    def test_capped_crop_does_not_round_past_the_cap(self):
+        import pymupdf
+        doc = pymupdf.open()
+        page = doc.new_page(width=595, height=842)
+        for top in (0, 75, 75.4, 200.7):
+            clip = pymupdf.Rect(0, top, 595, 842)
+            zoom = regions.capped_zoom(regions.READ_DPI / 72, clip)
+            pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), clip=clip, alpha=False)
+            self.assertLessEqual(max(pix.width, pix.height), regions.VISION_CAP, top)
+
 
 class ReaderCropTests(unittest.TestCase):
     @classmethod

@@ -31,20 +31,25 @@ READ_DPI = 300
 SPLIT_DPI = 150
 
 
-def embedded_ppi(page):
-    """Pixels per inch of the largest image on the page, or None.
+def embedded_ppi(page, min_cover=0.5):
+    """Pixels per inch of the page's scan, or None when it has no scan.
 
+    The scan is the largest image covering at least `min_cover` of the page.
+    A logo or an ornament on a typeset page is not a scan: its pixels say
+    nothing about the text around it, which is vector and renders at any dpi.
     Measured against the image's own box, not the page: a scan of a
     two-page spread is placed wider than the page it is shown on.
     """
+    area = abs(page.rect)
     best = None
     for image in page.get_image_info():
         px = int(image.get("width") or 0)
-        x0, _y0, x1, _y1 = image.get("bbox") or (0, 0, 0, 0)
-        span = x1 - x0
-        if px <= 0 or span <= 0:
+        box = pymupdf.Rect(image.get("bbox") or (0, 0, 0, 0))
+        if px <= 0 or box.width <= 0 or area <= 0:
             continue
-        ppi = px / (span / 72.0)
+        if abs(box & page.rect) < min_cover * area:
+            continue
+        ppi = px / (box.width / 72.0)
         if best is None or px > best[0]:
             best = (px, ppi)
     return best[1] if best else None
@@ -86,7 +91,8 @@ def capped_zoom(zoom, clip, cap=None):
     edge = max(clip.width, clip.height)
     if edge <= 0:
         return zoom
-    return min(zoom, cap / edge)
+    # MuPDF rounds a clip outward to whole pixels: keep 2 px of headroom.
+    return min(zoom, (cap - 2) / edge)
 
 
 def needs_split(clip, zoom, cap=None):
