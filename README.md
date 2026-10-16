@@ -12,7 +12,13 @@ The kit was first written by Abu Ameer Khusraw for Arena agent mode. This repo i
 4. Open a new chat with a vision model. Attach `SKILL.md`, or point the model at this repo, and attach the PDF.
 5. If the host can spawn agents, it should spawn one per file in `agents/`. If it cannot, the same model plays the roles in order. Grok does either: one chat that follows `SKILL.md`, or a crew if the host has subagents.
 
-A free chat cannot hold a whole book. Do it a batch per chat: keep `work/`, and start each chat with `python3 scripts/next_batch.py work`. It prints what is done, what to fix, and the next 15 pages to render and read. No API key, no paid model: the chat is the reader.
+A free chat cannot hold a whole book, so the book is read a batch per chat, and the repo carries the state. Commit the PDF under `PDFs/`, then in an agent chat that can run commands and push (Arena agent mode):
+
+1. First chat: "Start the book `PDFs/FILE.pdf` as vol1, then continue the book." It runs `python3 scripts/book.py start PDFs/FILE.pdf --name vol1`.
+2. Every chat after that, just say: **continue the book.** `AGENTS.md` tells the agent the rest: `book.py next` fetches the state from the `book/vol1` branch and renders the next 15 pages, the agent reads them, and `book.py save` checks, appends, commits and pushes.
+3. When it reports Done reading: "finish the book." `book.py finish` builds one Word file and runs the gate, on the same branch.
+
+No API key, no paid model, no files to download or upload between chats: the chat is the reader, and git is the memory. A host that cannot run commands can still use `scripts/next_batch.py` with a `work/` folder you carry by hand.
 
 The model writes `work/transcript.txt`. Then:
 

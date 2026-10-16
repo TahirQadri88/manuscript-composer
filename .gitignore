@@ -10,4 +10,5 @@ transcript.txt
 layout.jsonl
 delivery.md
 lines.json
-
+books/*/pages/
+books/*/batch.txt

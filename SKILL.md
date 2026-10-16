@@ -77,7 +77,18 @@ Clean print: about 15 PDF pages a turn. Handwriting: about 8. Append to the same
 
 ### One batch per chat
 
-No free chat holds a whole book, and a chat that tries stops mid book. Keep `work/` between chats (`book.pdf`, `progress.md`, `transcript.txt`, `lines.json`) and start every chat, and end every batch, with:
+No free chat holds a whole book, and a chat that tries stops mid book. If the host can run commands and push to the repo (Arena agent mode), nothing has to be carried by hand. The book lives in `books/NAME/` on its own branch, `book/NAME`, and every chat is the same five steps in `AGENTS.md` under "Continue the book":
+
+```bash
+python3 scripts/book.py start PDFs/FILE.pdf --name vol1   # once; the PDF must be committed
+python3 scripts/book.py next                              # every chat: fetch state, render, list crops
+python3 scripts/book.py save                              # every chat: check, append, commit, push
+python3 scripts/book.py finish                            # when next says Done reading
+```
+
+`save` refuses a batch that claims other pages than `next` asked for, or has an `@pdf` with nothing under it. Claimed pages that the gate finds broken (a duplicate, a bare `@pdf`, a missing `@cont`, an unchecked repeat) come back as "Fix first" before any new page.
+
+Without push rights, keep `work/` between chats (`book.pdf`, `progress.md`, `transcript.txt`, `lines.json`) and start every chat, and end every batch, with:
 
 ```bash
 python3 ../scripts/next_batch.py .              # 15 pages; --size 8 for handwriting
