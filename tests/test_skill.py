@@ -152,6 +152,13 @@ class GateTests(unittest.TestCase):
         self.assertEqual(report["glued_markers"], [])
         self.assertTrue(gate.ok(report))
 
+    def test_footnote_that_cites_a_page_is_not_a_glued_marker(self):
+        # Majlis-e-Shar'i vol. 1, PDF 37: a note that is only a page reference.
+        cited = "@pdf 1\n@page 1\nنفع یاب ہوئے۔^[ص:٤١، مناقب مذكور]^\n"
+        self.assertEqual(gate.check("range: 1-1\n", cited)["glued_markers"], [])
+        glued = "@pdf 1\n@page 1\nپھر ان کی [ص 2] ایک^[ص:٤١]^\n"
+        self.assertEqual(len(gate.check("range: 1-1\n", glued)["glued_markers"]), 1)
+
     def test_progress_without_a_range_is_an_error(self):
         report = gate.check("pdf_pages: 3\n", "@pdf 1\n")
         self.assertIn("error", report)

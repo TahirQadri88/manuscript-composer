@@ -59,7 +59,7 @@ def check(progress_text, transcript_text, line_counts=None, pdf_pages=None):
         ],
         "glued_markers": [
             s for s in transcript_text.splitlines()
-            if "[ص" in s and not s.strip().startswith("@")
+            if "[ص" in s.replace("^[ص", "") and not s.strip().startswith("@")
         ],
         "unpaired": continuity.unpaired(pages),
         "thin": continuity.thin_pages(pages, line_counts or {}),
