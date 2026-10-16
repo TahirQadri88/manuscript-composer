@@ -1,32 +1,66 @@
 # -*- coding: utf-8 -*-
-"""Render one PDF page at the embedded scan's pixel size and classify it.
+"""Render one PDF page for its readers, and classify it at 72 dpi.
 
-Zoom is embedded_ppi / 72, and never past the embedded image. A 1:1 render
-of a 150 ppi scan is 72 dpi and drops detail. Table pages are detected from
-ruled lines. A faint footnote rule is not invented.
+Two renders, kept apart:
+
+- Classification runs on a 72 dpi pixmap, one PDF point to one pixel.
+  classify()'s ink and rule thresholds and rule_bands' gap were tuned there.
+- A reader's crop is rendered at the embedded scan's own pixels (or READ_DPI
+  for a page with no embedded image), never past them, and capped so its long
+  edge is at most VISION_CAP. A vision host resizes anything larger.
+
+A body crop that would exceed the cap is split once, through a quiet band of
+whitespace near the middle, into p{N}_body_a.png (top) and p{N}_body_b.png
+(bottom). Never at the midpoint, never with an overlap. Table pages are
+detected from ruled lines. A faint footnote rule is not invented.
 """
+import json
+import statistics
 import sys
 from pathlib import Path
 
 import pymupdf
+
+# Long edge, in pixels, above which a vision host resizes the image.
+# Claude's documented figure; the conservative target for every host.
+VISION_CAP = 2576
+# Used only when a page has no embedded image to take the pixels from.
+READ_DPI = 300
+# The split search renders at 150 dpi. At 72 dpi the gap between two lines
+# of Nastaliq is under a pixel, so every row reads as inked.
+SPLIT_DPI = 150
+
+
+def embedded_ppi(page):
+    """Pixels per inch of the largest image on the page, or None.
+
+    Measured against the image's own box, not the page: a scan of a
+    two-page spread is placed wider than the page it is shown on.
+    """
+    best = None
+    for image in page.get_image_info():
+        px = int(image.get("width") or 0)
+        x0, _y0, x1, _y1 = image.get("bbox") or (0, 0, 0, 0)
+        span = x1 - x0
+        if px <= 0 or span <= 0:
+            continue
+        ppi = px / (span / 72.0)
+        if best is None or px > best[0]:
+            best = (px, ppi)
+    return best[1] if best else None
 
 
 def render_zoom(page):
     """Match the embedded scan. Never render wider than that image.
 
     An A4 page (595 pt) whose scan is 1240 px is 150 ppi. A 1:1 render
-    is 72 dpi and drops detail. Zoom is px / page_width, so the pixmap
-    stays at the embedded pixel size and no higher.
+    is 72 dpi and drops detail. Zoom is ppi / 72, so the pixmap stays at
+    the embedded pixel size and no higher.
     """
-    width = page.rect.width
-    pixels = 0
-    for image in page.get_image_info():
-        pixels = max(pixels, int(image.get("width") or 0))
-    if pixels <= 0 or width <= 0:
+    ppi = embedded_ppi(page)
+    if not ppi:
         return 1.0, 72.0
-    zoom = pixels / width
-    ppi = pixels / (width / 72.0)
-    return zoom, ppi
+    return ppi / 72.0, ppi
 
 
 def page_pixmap(page):
@@ -34,6 +68,87 @@ def page_pixmap(page):
     return page.get_pixmap(
         matrix=pymupdf.Matrix(zoom, zoom), alpha=False, colorspace=pymupdf.csGRAY,
     )
+
+
+def classify_pixmap(page):
+    """72 dpi greyscale: the resolution classify() was tuned on."""
+    return page.get_pixmap(matrix=pymupdf.Matrix(1, 1), alpha=False, colorspace=pymupdf.csGRAY)
+
+
+def native_zoom(page):
+    """The reader's zoom before the cap: the scan's pixels, or READ_DPI."""
+    ppi = embedded_ppi(page)
+    return (ppi or READ_DPI) / 72.0
+
+
+def capped_zoom(zoom, clip, cap=None):
+    cap = VISION_CAP if cap is None else cap
+    edge = max(clip.width, clip.height)
+    if edge <= 0:
+        return zoom
+    return min(zoom, cap / edge)
+
+
+def needs_split(clip, zoom, cap=None):
+    """True when the crop's long edge at full resolution exceeds the cap."""
+    cap = VISION_CAP if cap is None else cap
+    return max(clip.width, clip.height) * zoom > cap
+
+
+def row_ink(pix, threshold=160, step=3):
+    """Dark pixels per row, sampling every `step`-th pixel."""
+    w, h = pix.width, pix.height
+    buf = pix.samples
+    return [
+        sum(1 for x in range(0, w, step) if buf[y * w + x] < threshold)
+        for y in range(h)
+    ]
+
+
+def quiet_cut(ink, lo=0.30, hi=0.70, min_run=2):
+    """Row to cut at, or None. The centre of the longest quiet run.
+
+    The floor is the band's minimum, not zero: a printed frame down both
+    margins inks every row. A fraction of the median alone falls below that
+    floor and nothing qualifies; an absolute zero never matches at 72 dpi.
+    """
+    h = len(ink)
+    a, b = int(h * lo), int(h * hi)
+    band = ink[a:b]
+    if not band:
+        return None
+    floor = min(band)
+    typical = statistics.median(band)
+    quiet = floor + max(1, 0.15 * (typical - floor))
+    runs = []
+    start = None
+    for i, value in enumerate(band + [None]):
+        if value is not None and value <= quiet and value < typical:
+            if start is None:
+                start = i
+        elif start is not None:
+            runs.append((start, i))
+            start = None
+    runs = [r for r in runs if r[1] - r[0] >= min_run]
+    if not runs:
+        return None
+    middle = len(band) / 2
+    s, e = max(runs, key=lambda r: (r[1] - r[0], -abs((r[0] + r[1]) / 2 - middle)))
+    return a + (s + e) // 2
+
+
+def split_point(page, clip):
+    """PDF y of a whitespace cut through `clip`, and the 150 dpi evidence."""
+    scale = SPLIT_DPI / 72.0
+    pix = page.get_pixmap(
+        matrix=pymupdf.Matrix(scale, scale), clip=clip,
+        alpha=False, colorspace=pymupdf.csGRAY,
+    )
+    ink = row_ink(pix)
+    row = quiet_cut(ink)
+    if row is None:
+        return None, ink, None
+    return clip.y0 + (row + 0.5) / scale, ink, row
 
 
 def _bands(rows, gap=3):
@@ -101,33 +216,64 @@ def classify(pix):
 def save_regions(page, dest_dir, pdf_index):
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
-    zoom, ppi = render_zoom(page)
-    pix = page_pixmap(page)
-    info = classify(pix)
-    info["ppi"] = round(ppi, 1)
-    info["zoom"] = round(zoom, 3)
-    h = pix.height
-    rules = rule_bands(pix)
+    _zoom, ppi = render_zoom(page)
+    cpix = classify_pixmap(page)
+    info = classify(cpix)
+    info["ppi"] = round(ppi, 1) if embedded_ppi(page) else None
+    h = cpix.height
+    rules = rule_bands(cpix)
+    # cpix is 72 dpi, so these rows are PDF points.
     header_y = rules[0][1] + 2 if rules and rules[0][0] < h * 0.14 else int(h * 0.09)
     rect = page.rect
-    matrix = pymupdf.Matrix(zoom, zoom)
+    full_zoom = native_zoom(page)
+    info["regions"] = {}
+    info["dpi"] = {}
 
     def clip_save(name, y0, y1):
         if y1 - y0 < 8:
             return
-        clip = pymupdf.Rect(0, y0 / zoom, rect.width, y1 / zoom)
+        clip = pymupdf.Rect(rect.x0, rect.y0 + y0, rect.x1, rect.y0 + y1)
+        zoom = capped_zoom(full_zoom, clip)
         path = dest / f"p{pdf_index}_{name}.png"
-        page.get_pixmap(matrix=matrix, clip=clip, alpha=False).save(path)
-        info.setdefault("regions", {})[name] = str(path)
+        page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), clip=clip, alpha=False).save(path)
+        info["regions"][name] = str(path)
+        info["dpi"][name] = round(zoom * 72)
 
     clip_save("header", 0, header_y)
-    body_name = "grid" if info["kind"] == "table" else "body"
-    clip_save(body_name, header_y, h)
-    # native full page, for the verifier's second look. Not upscaled.
-    full = dest / f"p{pdf_index}_full.png"
-    pix.save(full)
-    info.setdefault("regions", {})["full"] = str(full)
+    body = pymupdf.Rect(rect.x0, rect.y0 + header_y, rect.x1, rect.y1)
+    if info["kind"] == "table":
+        clip_save("grid", header_y, rect.height)
+    elif needs_split(body, full_zoom):
+        cut, _ink, row = split_point(page, body)
+        if cut is None:
+            info["split"] = "none: no quiet band"
+            clip_save("body", header_y, rect.height)
+        else:
+            y = cut - rect.y0
+            info["split"] = {"top": header_y, "y": round(y, 1), "row": row, "dpi": SPLIT_DPI}
+            clip_save("body_a", header_y, y)
+            clip_save("body_b", y, rect.height)
+    else:
+        clip_save("body", header_y, rect.height)
+    # full page, for the verifier's second look. Capped, never upscaled.
+    clip_save("full", 0, rect.height)
     return info
+
+
+def layout_record(info, pdf_index):
+    """One line of layout.jsonl. `body` is a path, or [top, bottom]."""
+    regions = info["regions"]
+    record = {"pdf": pdf_index, "kind": info["kind"]}
+    if "header" in regions:
+        record["header"] = regions["header"]
+    if "grid" in regions:
+        record["grid"] = regions["grid"]
+    elif "body_a" in regions:
+        record["body"] = [regions["body_a"], regions["body_b"]]
+    elif "body" in regions:
+        record["body"] = regions["body"]
+    record["full"] = regions["full"]
+    return record
 
 
 def inspect(pdf_path):
@@ -144,7 +290,7 @@ def inspect(pdf_path):
 
 def main(argv):
     if len(argv) < 2:
-        print("usage: render_regions.py file.pdf [pdf_index] [dest]", file=sys.stderr)
+        print("usage: render_regions.py file.pdf [pdf_index] [dest] [layout.jsonl]", file=sys.stderr)
         return 1
     if len(argv) == 2:
         n, rows = inspect(argv[1])
@@ -157,7 +303,14 @@ def main(argv):
     info = save_regions(doc[index - 1], argv[3] if len(argv) > 3 else "pages", index)
     print(info["kind"], "rules", info["rules"], "ink", info["ink"], "ppi", info["ppi"])
     for name, path in info["regions"].items():
-        print(name, path)
+        print(name, path, f"{info['dpi'][name]}dpi")
+    if "split" in info:
+        print("split", info["split"])
+    record = json.dumps(layout_record(info, index), ensure_ascii=False)
+    print("layout", record)
+    if len(argv) > 4:
+        with open(argv[4], "a", encoding="utf-8") as handle:
+            handle.write(record + "\n")
     return 0
 
 

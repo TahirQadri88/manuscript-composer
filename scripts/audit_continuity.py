@@ -122,3 +122,55 @@ def thin_pages(pages, line_counts, floor=0.6):
     if median <= 0:
         return []
     return sorted(pdf for pdf, ratio in ratios.items() if ratio < floor * median)
+
+
+# Lines that carry no text of the page.
+LEDGER = ("@page", "@lang", "@sheet")
+MARKUP = re.compile(r"\|\|\||\^\[|\]\^|\{\{|\}\}|\||\*\*|\[\[|\]\]")
+PUNCT = "۔،؛؟.,!?:;\"'“”«»()[]{}<>"
+
+
+def bare_pages(pages):
+    """@pdf with nothing under it: a page claimed and not delivered."""
+    return [
+        p["pdf"] for p in pages
+        if p["kind"] == "read"
+        and not [line for line in p["lines"] if not line.startswith(LEDGER)]
+    ]
+
+
+def page_words(lines):
+    words = []
+    for line in lines:
+        if line.startswith(LEDGER):
+            continue
+        if line.startswith("@"):
+            line = line.split(None, 1)[1] if " " in line else ""
+        for token in MARKUP.sub(" ", line).split():
+            token = token.strip(PUNCT)
+            if token:
+                words.append(token)
+    return words
+
+
+def repeated_runs(pages, n=8):
+    """A run of n or more words that appears twice inside one @pdf block.
+
+    Flag for re-read only. A book can repeat itself; a reader that read
+    one passage twice looks the same in the text, and only the image can
+    tell them apart.
+    """
+    found = []
+    for page in pages:
+        if page["kind"] != "read":
+            continue
+        words = page_words(page["lines"])
+        first = {}
+        for i in range(len(words) - n + 1):
+            gram = tuple(words[i:i + n])
+            if gram not in first:
+                first[gram] = i
+            elif i - first[gram] >= n:
+                found.append({"pdf": page["pdf"], "words": " ".join(gram)})
+                break
+    return found

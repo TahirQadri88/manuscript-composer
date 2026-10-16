@@ -16,12 +16,16 @@ The model writes `work/transcript.txt`. Then:
 
 ```bash
 python3 composer/composer.py work/transcript.txt work/Book_pdf1-15_of_217.docx
-python3 scripts/gate.py work/progress.md work/transcript.txt
+python3 scripts/gate.py work/progress.md work/transcript.txt work/lines.json work/book.pdf
 ```
 
-Exit code 2 means the file is not the whole range, a claimed page is thin against its line boxes, or a sentence crosses a page without `@cont`. The reply has to start with NATAMAM. `work/delivery.md` is that report. Do not write it from memory.
+Exit code 2 means the file is not the whole range, an index is claimed twice or with nothing under it, an index is not in the PDF, a claimed page is thin against its line boxes, or a sentence crosses a page without `@cont`. The reply has to start with NATAMAM. `work/delivery.md` is that report. Do not write it from memory.
 
-Exit 0 is not a finished book. It means every index was claimed, the thin check passed when `lines.json` was present, and `@cont` pairs. It does not mean someone compared the ink. Without `lines.json` the thin check does not run, and a page can be half empty and still claimed.
+Exit 0 is not a finished book. It means every index was claimed once, with something under it, the thin check passed when `lines.json` was present, and `@cont` pairs. It does not mean someone compared the ink. Without `lines.json` the thin check does not run, and a page can be half empty and still claimed.
+
+## What a reader is sent
+
+Not the whole page at 72 dpi. `scripts/render_regions.py` classifies at 72 dpi, where its thresholds were tuned, and renders the reader's crops at the embedded scan's own pixels, never upscaled, capped at 2576 px on the long edge. A vision host resizes anything larger, so an A4 page sent whole arrives at about 220 dpi. A body crop that would exceed the cap is split once, through whitespace between two lines, never at the midpoint and never with an overlap. Each half then arrives at up to the scan's own resolution: 318–434 dpi on ten A4 pages measured. Nastaliq that is unreadable at 110 dpi is readable at 400. `layout.jsonl` carries both halves to the body reader.
 
 ## Text layer
 

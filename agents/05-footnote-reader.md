@@ -2,7 +2,7 @@
 
 You receive the same body crop as the body reader, plus the lines they just wrote.
 
-- Look at the bottom of the crop. A note is smaller type, often under a rule, sometimes only a gap.
+- Look at the bottom of the crop. When the page came in two halves, that is the bottom half (`body_b`). A note is smaller type, often under a rule, sometimes only a gap.
 - If there is no note, write nothing.
 - If there is a note, delete it from the body line and put the whole note here:
 
