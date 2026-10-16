@@ -112,11 +112,15 @@ def row_ink(pix, threshold=160, step=3):
 
 
 def quiet_cut(ink, lo=0.30, hi=0.70, min_run=2):
-    """Row to cut at, or None. The centre of the longest quiet run.
+    """Row to cut at, or None. The middle of the longest quiet run.
 
     The floor is the band's minimum, not zero: a printed frame down both
     margins inks every row. A fraction of the median alone falls below that
     floor and nothing qualifies; an absolute zero never matches at 72 dpi.
+    A band with no contrast at all (a solid block, an empty middle) has no
+    gap to find: every row would be "quiet", and its centre is only the
+    midpoint. Inside the chosen run the cut moves to the floor-level row
+    nearest the run's centre, so a stray dot in the run is not where it lands.
     """
     h = len(ink)
     a, b = int(h * lo), int(h * hi)
@@ -124,12 +128,14 @@ def quiet_cut(ink, lo=0.30, hi=0.70, min_run=2):
     if not band:
         return None
     floor = min(band)
+    if max(band) == floor:
+        return None
     typical = statistics.median(band)
     quiet = floor + max(1, 0.15 * (typical - floor))
     runs = []
     start = None
     for i, value in enumerate(band + [None]):
-        if value is not None and value <= quiet and value < typical:
+        if value is not None and value <= quiet:
             if start is None:
                 start = i
         elif start is not None:
@@ -140,7 +146,10 @@ def quiet_cut(ink, lo=0.30, hi=0.70, min_run=2):
         return None
     middle = len(band) / 2
     s, e = max(runs, key=lambda r: (r[1] - r[0], -abs((r[0] + r[1]) / 2 - middle)))
-    return a + (s + e) // 2
+    centre = (s + e) // 2
+    lowest = min(band[s:e])
+    row = min((i for i in range(s, e) if band[i] == lowest), key=lambda i: abs(i - centre))
+    return a + row
 
 
 def split_point(page, clip):

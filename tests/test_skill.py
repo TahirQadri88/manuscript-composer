@@ -455,6 +455,20 @@ class SplitTests(unittest.TestCase):
         one_row[100] = 5
         self.assertIsNone(regions.quiet_cut(one_row))
 
+    def test_a_mostly_white_middle_still_splits(self):
+        # A chapter ending: a few lines at the top, then white. The median row is 0.
+        ink = [20 if y < 70 or 150 <= y < 158 else 0 for y in range(200)]
+        cut = regions.quiet_cut(ink)
+        self.assertIsNotNone(cut)
+        self.assertEqual(ink[cut], 0)
+
+    def test_a_stray_dot_inside_the_quiet_run_is_not_the_cut(self):
+        ink = self.framed(quiet_at=(94, 107))
+        ink[100] = 6  # within floor + 1, so still part of the run
+        cut = regions.quiet_cut(ink)
+        self.assertEqual(ink[cut], 5)
+        self.assertIn(cut, (99, 101))
+
     def test_only_a_crop_over_the_cap_splits(self):
         import pymupdf
         body = pymupdf.Rect(0, 76, 595, 842)
